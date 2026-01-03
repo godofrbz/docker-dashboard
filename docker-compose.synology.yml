@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  docker-dashboard:
+    image: docker-dashboard:latest
+    container_name: docker-dashboard
+    ports:
+      - "3001:3001"
+    volumes:
+      # Docker Socket - wichtig für den Zugriff auf Docker API
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Datenverzeichnisse - anpassen Sie die Pfade nach Ihren Bedürfnissen
+      - /volume1/docker/docker-dashboard/data:/app/data
+      - /volume1/docker/docker-dashboard/logs:/app/logs
+      - /volume1/docker/docker-dashboard/backups:/app/backups
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      # Optional: E-Mail-Einstellungen hier setzen oder in .env Datei
+      # - SMTP_HOST=smtp.gmail.com
+      # - SMTP_PORT=587
+      # - SMTP_SECURE=false
+      # - SMTP_USER=your-email@gmail.com
+      # - SMTP_PASS=your-app-password
+    restart: unless-stopped
+    networks:
+      - docker-dashboard-network
+    # Für Synology: Privileged Mode kann erforderlich sein
+    privileged: false
+
+networks:
+  docker-dashboard-network:
+    driver: bridge
+
+
+
+

@@ -1,0 +1,26 @@
+{
+  "name": "docker-dashboard",
+  "version": "1.0.0",
+  "description": "A comprehensive web-based dashboard for managing Docker containers",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/godofrbz/docker-dashboard.git"
+  },
+  "keywords": [
+    "docker",
+    "dashboard",
+    "container-management",
+    "docker-compose",
+    "monitoring"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/godofrbz/docker-dashboard/issues"
+  },
+  "homepage": "https://github.com/godofrbz/docker-dashboard#readme"
+}

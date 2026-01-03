@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  docker-dashboard:
+    build: .
+    container_name: docker-dashboard
+    ports:
+      - "3001:3001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+    env_file:
+      - backend/.env
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - docker-dashboard-network
+
+networks:
+  docker-dashboard-network:
+    driver: bridge
+
+
+
