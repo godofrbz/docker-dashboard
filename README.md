@@ -49,10 +49,6 @@ A comprehensive web-based dashboard for managing Docker containers with advanced
 - **Notifications**: Email notifications for important events
 - **SMTP Configuration**: Configure email notifications
 
-## Screenshots
-
-*Add screenshots here*
-
 ## Prerequisites
 
 - Docker and Docker Compose installed
@@ -63,10 +59,10 @@ A comprehensive web-based dashboard for managing Docker containers with advanced
 
 ### 1. Clone the Repository
 
-git clone git@github.com:godofrbz/docker-dashboard.git
-
+```bash
+git clone https://github.com/godofrbz/docker-dashboard.git
 cd docker-dashboard
-
+```
 
 ### 2. Configure Environment Variables
 
