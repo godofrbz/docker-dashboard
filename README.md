@@ -64,7 +64,7 @@ A comprehensive web-based dashboard for managing Docker containers with advanced
 ### 1. Clone the Repository
 
 ```bash
-git clone git@github.com:godofrbz/Docker-Update-Dashboard.git
+git clone https://github.com/godofrbz/docker-dashboard.git
 cd docker-dashboard
 ```
 
@@ -350,5 +350,3 @@ For issues and questions:
 - Backend: [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/)
 - Database: [SQLite](https://www.sqlite.org/)
 - UI: [Material-UI](https://mui.com/)
-# docker-dashboard
-# docker-dashboard
