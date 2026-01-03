@@ -64,7 +64,11 @@ A comprehensive web-based dashboard for managing Docker containers with advanced
 ### 1. Clone the Repository
 
 ```bash
+<<<<<<< HEAD
 git clone https://github.com/godofrbz/docker-dashboard.git
+=======
+git clone git@github.com:godofrbz/docker-dashboard.git
+>>>>>>> 4ce48d3a7fcb3db4a460eff925fd144819a43d02
 cd docker-dashboard
 ```
 
