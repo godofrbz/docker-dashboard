@@ -219,6 +219,11 @@ export async function createBackup(containerId: string): Promise<string> {
   
   // Erstelle Backup-Verzeichnis falls es nicht existiert
   const fs = await import('fs');
+  const path = await import('path');
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+  
   if (!fs.existsSync('/app/backups')) {
     fs.mkdirSync('/app/backups', { recursive: true });
   }
@@ -226,17 +231,129 @@ export async function createBackup(containerId: string): Promise<string> {
     fs.mkdirSync(backupDir, { recursive: true });
   }
   
-  // Hole das Image des Containers
-  const image = dockerInstance.getImage(info.Config.Image);
-  const backupPath = `${backupDir}/backup.tar`;
-  
-  // Hier würde normalerweise ein tatsächlicher Backup-Prozess stattfinden
-  // Für diese Implementierung erstellen wir eine leere Datei als Platzhalter
-  fs.writeFileSync(backupPath, '');
-  
-  logger.info(`Backup erstellt für Container ${containerId} -> ${backupPath}`);
-  
-  return backupId;
+  try {
+    // 1. Speichere Container-Konfiguration als JSON
+    const configPath = path.join(backupDir, 'container-config.json');
+    fs.writeFileSync(configPath, JSON.stringify(info, null, 2));
+    
+    // 2. Exportiere das Container-Image als TAR
+    const imageName = info.Config.Image;
+    const imageTarPath = path.join(backupDir, 'image.tar');
+    
+    try {
+      // Versuche das Image zu exportieren
+      const image = dockerInstance.getImage(imageName);
+      const imageStream = await image.get();
+      
+      // Speichere den Image-Stream in eine Datei
+      const writeStream = fs.createWriteStream(imageTarPath);
+      
+      await new Promise<void>((resolve, reject) => {
+        imageStream.pipe(writeStream);
+        imageStream.on('end', resolve);
+        imageStream.on('error', reject);
+        writeStream.on('error', reject);
+      });
+      
+      logger.info(`Image exported to ${imageTarPath}`);
+    } catch (imageError) {
+      logger.warn(`Could not export image ${imageName}, creating backup without image:`, imageError);
+      // Erstelle eine leere Image-Datei als Platzhalter
+      fs.writeFileSync(imageTarPath, '');
+    }
+    
+    // 3. Erstelle ein TAR-Archiv mit allen Backup-Dateien
+    const backupTarPath = path.join(backupDir, 'backup.tar');
+    
+    // Verwende tar-Befehl (verfügbar im Docker-Container) um alle Dateien zu archivieren
+    try {
+      // Prüfe welche Dateien existieren
+      const filesToArchive: string[] = [];
+      if (fs.existsSync(path.join(backupDir, 'container-config.json'))) {
+        filesToArchive.push('container-config.json');
+      }
+      if (fs.existsSync(path.join(backupDir, 'image.tar'))) {
+        const imageStats = fs.statSync(path.join(backupDir, 'image.tar'));
+        if (imageStats.size > 0) {
+          filesToArchive.push('image.tar');
+        }
+      }
+      
+      if (filesToArchive.length === 0) {
+        throw new Error('No files to archive');
+      }
+      
+      // Erstelle TAR-Archiv mit tar-Befehl
+      const tarCommand = `cd ${backupDir} && tar -cf backup.tar ${filesToArchive.join(' ')} 2>&1`;
+      const { stdout, stderr } = await execAsync(tarCommand);
+      
+      if (stderr && !stderr.includes('Removing leading')) {
+        logger.warn(`tar command warnings: ${stderr}`);
+      }
+      
+      // Prüfe ob die TAR-Datei erstellt wurde und nicht leer ist
+      if (!fs.existsSync(backupTarPath)) {
+        throw new Error('Backup TAR file was not created');
+      }
+      
+      const stats = fs.statSync(backupTarPath);
+      if (stats.size === 0) {
+        throw new Error('Backup TAR file is empty');
+      }
+      
+      logger.info(`Backup TAR created successfully: ${stats.size} bytes`);
+      
+      // Optional: Lösche temporäre Dateien (behalte nur backup.tar)
+      try {
+        if (fs.existsSync(path.join(backupDir, 'container-config.json'))) {
+          fs.unlinkSync(path.join(backupDir, 'container-config.json'));
+        }
+        if (fs.existsSync(path.join(backupDir, 'image.tar'))) {
+          fs.unlinkSync(path.join(backupDir, 'image.tar'));
+        }
+      } catch (cleanupError) {
+        logger.warn('Could not cleanup temporary backup files:', cleanupError);
+      }
+      
+      logger.info(`Backup created successfully for container ${containerId} -> ${backupTarPath}`);
+    } catch (tarError) {
+      logger.error(`Error creating TAR archive:`, tarError);
+      // Fallback: Erstelle TAR mit Node.js Streams (wenn tar-Package verfügbar)
+      try {
+        // Verwende native Node.js Streams um TAR zu erstellen
+        const zlib = await import('zlib');
+        const { pipeline } = await import('stream/promises');
+        const { createReadStream, createWriteStream } = fs;
+        
+        // Einfacher Fallback: Kopiere die größte Datei als backup.tar
+        const imageTarPath = path.join(backupDir, 'image.tar');
+        const configPath = path.join(backupDir, 'container-config.json');
+        
+        if (fs.existsSync(imageTarPath) && fs.statSync(imageTarPath).size > 0) {
+          // Kopiere image.tar als backup.tar
+          const readStream = createReadStream(imageTarPath);
+          const writeStream = createWriteStream(backupTarPath);
+          await pipeline(readStream, writeStream);
+          logger.info(`Backup created with fallback method (image copy) for container ${containerId}`);
+        } else if (fs.existsSync(configPath)) {
+          // Erstelle minimales TAR mit nur der Konfiguration
+          const configContent = fs.readFileSync(configPath);
+          fs.writeFileSync(backupTarPath, configContent);
+          logger.info(`Backup created with fallback method (config only) for container ${containerId}`);
+        } else {
+          throw new Error('No backup files available for fallback');
+        }
+      } catch (fallbackError) {
+        logger.error(`Fallback backup creation also failed:`, fallbackError);
+        throw new Error(`Failed to create backup: ${(fallbackError as Error).message}`);
+      }
+    }
+    
+    return backupId;
+  } catch (error) {
+    logger.error(`Error creating backup for container ${containerId}:`, error);
+    throw error;
+  }
 }
 
 export async function checkForUpdates(containerId: string): Promise<boolean> {

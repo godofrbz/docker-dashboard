@@ -67,8 +67,8 @@ RUN npm run build
 FROM node:18-alpine
 WORKDIR /app
 
-# Installiere Docker CLI für Dockerode
-RUN apk add --no-cache docker-cli
+# Installiere Docker CLI und tar für Backups
+RUN apk add --no-cache docker-cli tar
 
 # Backend dependencies
 COPY backend/package*.json ./
