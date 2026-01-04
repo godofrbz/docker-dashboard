@@ -126,15 +126,25 @@ backupRouter.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// Backup verifizieren (prüft ob Update erfolgreich war)
+// Backup verifizieren (prüft Backup-Integrität und ob Update erfolgreich war)
 backupRouter.post('/:backupId/verify', requireAuth, async (req, res) => {
   try {
     const { backupId } = req.params;
     const backupsDir = '/app/backups';
     const backupPath = path.join(backupsDir, backupId);
+    const backupTar = path.join(backupPath, 'backup.tar');
 
     if (!fs.existsSync(backupPath)) {
       return res.status(404).json({ error: 'Backup not found' });
+    }
+
+    // Prüfe Backup-Datei-Integrität
+    let backupValid = false;
+    let backupSize = 0;
+    if (fs.existsSync(backupTar)) {
+      const stats = fs.statSync(backupTar);
+      backupSize = stats.size;
+      backupValid = stats.size > 0;
     }
 
     const parts = backupId.split('_');
@@ -142,39 +152,69 @@ backupRouter.post('/:backupId/verify', requireAuth, async (req, res) => {
     const timestamp = parseInt(parts[1]) || Date.now();
     const timestampStr = new Date(timestamp).toISOString();
 
-    // Prüfe ob Container nach dem Backup erfolgreich gestartet wurde
+    // Prüfe ob es ein Update-Backup ist (suche nach update-Log vor dem Backup)
     const updateLogs = await dbAll(
       `SELECT * FROM logs 
        WHERE container_id = ? 
-       AND action = 'start' 
-       AND status = 'success'
-       AND timestamp > ? 
+       AND action IN ('update', 'update_applied')
+       AND timestamp <= ?
+       AND timestamp >= datetime(?, '-1 hour')
        ORDER BY timestamp DESC 
        LIMIT 1`,
-      [containerId, timestampStr]
+      [containerId, timestampStr, timestampStr]
     );
 
-    const updateSuccessful = updateLogs.length > 0;
+    const isUpdateBackup = updateLogs.length > 0;
+    let updateSuccessful: boolean | null = false;
+    let verificationMessage = '';
 
-    // Aktualisiere Backup-Status in der Datenbank (könnte eine separate Tabelle sein)
-    // Für jetzt loggen wir es
+    if (isUpdateBackup) {
+      // Für Update-Backups: Prüfe ob Container nach dem Backup erfolgreich gestartet wurde
+      const startLogs = await dbAll(
+        `SELECT * FROM logs 
+         WHERE container_id = ? 
+         AND action = 'start' 
+         AND status = 'success'
+         AND timestamp > ? 
+         ORDER BY timestamp DESC 
+         LIMIT 1`,
+        [containerId, timestampStr]
+      );
+
+      updateSuccessful = startLogs.length > 0;
+      verificationMessage = backupValid 
+        ? `Backup ${backupId} verified: File integrity OK (${(backupSize / 1024 / 1024).toFixed(2)} MB). Update ${updateSuccessful ? 'successful' : 'failed'}`
+        : `Backup ${backupId} verification failed: Backup file is invalid or missing`;
+    } else {
+      // Für manuelle Backups: Nur Datei-Integrität prüfen
+      updateSuccessful = null; // Nicht relevant für manuelle Backups
+      verificationMessage = backupValid
+        ? `Backup ${backupId} verified: File integrity OK (${(backupSize / 1024 / 1024).toFixed(2)} MB). Manual backup - no update to verify.`
+        : `Backup ${backupId} verification failed: Backup file is invalid or missing`;
+    }
+
+    const verificationStatus = backupValid 
+      ? (isUpdateBackup ? (updateSuccessful === true ? 'success' : 'failed') : 'success') 
+      : 'failed';
+
+    // Log-Eintrag erstellen
     await dbRun(
       `INSERT INTO logs (container_id, action, status, message)
        VALUES (?, ?, ?, ?)`,
       [
         containerId,
         'backup_verified',
-        updateSuccessful ? 'success' : 'failed',
-        `Backup ${backupId} verified: Update ${updateSuccessful ? 'successful' : 'failed'}`
+        verificationStatus,
+        verificationMessage
       ]
     );
 
     res.json({ 
-      verified: true, 
-      updateSuccessful,
-      message: updateSuccessful 
-        ? 'Update successful - Backup can be deleted' 
-        : 'Update failed - Backup should be kept'
+      verified: backupValid,
+      updateSuccessful: updateSuccessful,
+      isUpdateBackup: isUpdateBackup,
+      backupSize: backupSize,
+      message: verificationMessage
     });
   } catch (error) {
     logger.error('Error verifying backup:', error);
